@@ -13,3 +13,18 @@ The app works like this:
 - optionally, you can give this qr code a title and save it to use later.
 
 *Note: I used AI to help create this app.*
+
+## Example workflow
+
+<table>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/74fee7b1-dd9a-4e45-beca-0b218317b5bd" width="250"/></td>
+    <td><img src="https://github.com/user-attachments/assets/a74f861b-b36a-4deb-bb37-759e93c0e413" width="250"/></td>
+    <td><img src="https://github.com/user-attachments/assets/212b3682-8210-4cd3-8b4c-87482344b2bf" width="250"/></td>
+  </tr>
+  <tr>
+    <td align="center">Original QR code (<a href="https://support.gametize.com/hc/en-gb/articles/360008688132--QR-Code-Challenge-Displaying-QR-code-for-scanning">ref</a>)</td>
+    <td align="center">Share menu</td>
+    <td align="center">Improved QR code for display</td>
+  </tr>
+</table>
