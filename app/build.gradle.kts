@@ -13,15 +13,18 @@ android {
         applicationId = "app.cbdm.qrcodedisplayer"
         minSdk = 24
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1.0"
     }
 
     buildTypes {
         release {
-            optimization {
-                enable = false
-            }
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
     compileOptions {
@@ -43,8 +46,13 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    // Google ML Kit for reading the shared QR code
-    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    // Quick QR code scanner library for a first try
+    implementation("io.github.zxing-cpp:android:3.1.1")
+    // "Heavier" QR code scanner library for trickier images
+    implementation("org.boofcv:boofcv-android:1.5.0")
+    implementation("org.boofcv:boofcv-core:1.5.0")
     // ZXing for drawing the clean, new QR code
-    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.zxing:core:3.5.4")
+    // For the bug icon
+    implementation("androidx.compose.material:material-icons-extended")
 }

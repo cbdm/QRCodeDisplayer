@@ -8,51 +8,67 @@
 
 package app.cbdm.qrcodedisplayer
 
+import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.google.mlkit.vision.barcode.BarcodeScannerOptions
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.common.InputImage
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.lifecycleScope
+import boofcv.android.ConvertBitmap
+import boofcv.factory.fiducial.ConfigQrCode
+import boofcv.factory.fiducial.FactoryFiducial
+import boofcv.struct.image.GrayU8
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
-import android.content.ContentValues
-import android.os.Environment
-import android.provider.MediaStore
-import android.widget.Toast
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
-import androidx.compose.material3.Button
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.unit.sp
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import zxingcpp.BarcodeReader
 
 class MainActivity : ComponentActivity() {
 
     // Global state to trigger UI recomposition
     private val qrCodeData = mutableStateOf<String?>(null)
     private val statusMessage = mutableStateOf("Share an image with a QR code to this app.")
+    private val decodedStage = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -130,6 +146,51 @@ class MainActivity : ComponentActivity() {
                 } else {
                     StatusText(statusMessage.value)
                 }
+
+                val stage = decodedStage.value
+                if (stage != null) {
+                    // 1. State to track if the bug is open or closed
+                    var isDebugExpanded by remember { mutableStateOf(false) }
+
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 16.dp, bottom = 64.dp)
+                            // 2. Clip the shape FIRST so the clickable ripple stays inside the pill
+                            .clip(RoundedCornerShape(50))
+                            // 3. Toggle the state when clicked
+                            .clickable { isDebugExpanded = !isDebugExpanded }
+                            // 4. Subtle transparency when closed, solid when open so text is readable
+                            .background(Color.LightGray.copy(alpha = if (isDebugExpanded) 0.9f else 0.4f))
+                            // 5. This single line creates the smooth sliding animation!
+                            .animateContentSize(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessLow
+                                )
+                            )
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.BugReport,
+                                contentDescription = "Debug info",
+                                tint = Color.DarkGray,
+                                modifier = Modifier.size(18.dp)
+                            )
+
+                            // 6. Only draw the text if the user clicked to expand it
+                            if (isDebugExpanded) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = stage,
+                                    color = Color.DarkGray,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -146,79 +207,213 @@ class MainActivity : ComponentActivity() {
             val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
             if (uri != null) {
                 statusMessage.value = "Analyzing..."
-                decodeImageWithMLKit(uri)
+                // Launch the heavy scanning process in the background
+                lifecycleScope.launch {
+                    decodeImageWithFallback(uri)
+                }
             } else {
                 statusMessage.value = "Error: No image attached."
             }
         }
     }
 
-    private fun decodeImageWithMLKit(uri: Uri) {
-        try {
-            // 1. Programmatically add a white border to the shared image
-            val paddedBitmap = addWhiteMarginToUri(uri)
-            if (paddedBitmap == null) {
+    private suspend fun decodeImageWithFallback(uri: Uri) {
+        withContext(Dispatchers.Default) {
+            val originalBitmap = try {
+                contentResolver.openInputStream(uri)?.use {
+                    android.graphics.BitmapFactory.decodeStream(it)
+                }
+            } catch (e: Exception) { null }
+
+            if (originalBitmap == null) {
                 statusMessage.value = "Could not read the image."
-                return
+                return@withContext
             }
 
-            // 2. Feed the newly padded image to ML Kit instead of the original file
-            val image = InputImage.fromBitmap(paddedBitmap, 0)
+            // Create the 4 different image variations we'll try the models.
+            // They only process the image if/when the variable is actually called.
+            val normalImg by lazy { padBitmapWithWhite(originalBitmap) }
+            val invertedImg by lazy { padBitmapWithWhite(invertBitmapColors(originalBitmap)) }
+            val bwImg by lazy { padBitmapWithWhite(applyExtremeContrast(originalBitmap)) }
+            val bwInvertedImg by lazy { padBitmapWithWhite(invertBitmapColors(applyExtremeContrast(originalBitmap))) }
 
-            val options = BarcodeScannerOptions.Builder()
-                .setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS)
-                .build()
+            // ---------------------------------------------------------
+            // 1: The quick checks (ZXing-C++)
+            // ---------------------------------------------------------
+            statusMessage.value = "Scanning..."
 
-            val scanner = BarcodeScanning.getClient(options)
+            val zxingReader = BarcodeReader().apply {
+                options = BarcodeReader.Options(tryHarder = true)
+            }
 
-            scanner.process(image)
-                .addOnSuccessListener { barcodes ->
-                    if (barcodes.isNotEmpty()) {
-                        qrCodeData.value = barcodes.first().rawValue
-                    } else {
-                        qrCodeData.value = null
-                        statusMessage.value = "No code detected, even with the added margin."
-                    }
+            // 1. Normal
+            try {
+                val res = zxingReader.read(normalImg).firstOrNull()
+                if (res != null && !res.text.isNullOrEmpty()) {
+                    qrCodeData.value = res.text
+                    decodedStage.value = "Original QR code decoded on Stage 1 (ZXing Normal)"
+                    return@withContext
                 }
-                .addOnFailureListener {
-                    qrCodeData.value = null
-                    statusMessage.value = "Failed to scan: ${it.localizedMessage}"
+            } catch (e: Exception) {}
+
+            // 2. Inverted
+            try {
+                val res = zxingReader.read(invertedImg).firstOrNull()
+                if (res != null && !res.text.isNullOrEmpty()) {
+                    qrCodeData.value = res.text
+                    decodedStage.value = "Original QR code decoded on Stage 2 (ZXing Inverted)"
+                    return@withContext
                 }
-        } catch (e: Exception) {
-            statusMessage.value = "Error loading image."
+            } catch (e: Exception) {}
+
+            // 3. High Contrast B/W
+            try {
+                val res = zxingReader.read(bwImg).firstOrNull()
+                if (res != null && !res.text.isNullOrEmpty()) {
+                    qrCodeData.value = res.text
+                    decodedStage.value = "Original QR code decoded on Stage 3 (ZXing B/W)"
+                    return@withContext
+                }
+            } catch (e: Exception) {}
+
+            // 4. High Contrast B/W Inverted
+            try {
+                val res = zxingReader.read(bwInvertedImg).firstOrNull()
+                if (res != null && !res.text.isNullOrEmpty()) {
+                    qrCodeData.value = res.text
+                    decodedStage.value = "Original QR code decoded on Stage 4 (ZXing Inverted B/W)"
+                    return@withContext
+                }
+            } catch (e: Exception) {}
+
+
+            // ---------------------------------------------------------
+            // 2: The heavy scan (BoofCV)
+            // ---------------------------------------------------------
+            statusMessage.value = "Trying harder..."
+
+            val boofcvConfig = ConfigQrCode().apply {
+                // 1. Checks if the QR code is mirrored/flipped
+                considerTransposed = true
+            }
+            val boofcvDetector = FactoryFiducial.qrcode(boofcvConfig, GrayU8::class.java)
+
+            // Helper function to keep the BoofCV boilerplate clean
+            fun tryBoofCV(bitmapToTest: Bitmap): String? {
+                val grayImage = GrayU8(bitmapToTest.width, bitmapToTest.height)
+                ConvertBitmap.bitmapToGray(bitmapToTest, grayImage, null)
+                boofcvDetector.process(grayImage)
+                return if (boofcvDetector.detections.isNotEmpty()) boofcvDetector.detections[0].message else null
+            }
+
+            // 5. Normal Heavy
+            try {
+                val res = tryBoofCV(normalImg)
+                if (!res.isNullOrEmpty()) {
+                    qrCodeData.value = res
+                    decodedStage.value = "Original QR code decoded on Stage 5 (BoofCV Normal)"
+                    return@withContext
+                }
+            } catch (e: Exception) {}
+
+            // 6. Inverted Heavy
+            statusMessage.value = "Deep scanning inverted colors..."
+            try {
+                val res = tryBoofCV(invertedImg)
+                if (!res.isNullOrEmpty()) {
+                    qrCodeData.value = res
+                    decodedStage.value = "Original QR code decoded on Stage 6 (BoofCV Inverted)"
+                    return@withContext
+                }
+            } catch (e: Exception) {}
+
+            // 7. B/W Heavy
+            statusMessage.value = "Last resort: removing shadows..."
+            try {
+                val res = tryBoofCV(bwImg)
+                if (!res.isNullOrEmpty()) {
+                    qrCodeData.value = res
+                    decodedStage.value = "Original QR code decoded on Stage 7 (BoofCV B/W)"
+                    return@withContext
+                }
+            } catch (e: Exception) {}
+
+            // 8. B/W Inverted Heavy
+            try {
+                val res = tryBoofCV(bwInvertedImg)
+                if (!res.isNullOrEmpty()) {
+                    qrCodeData.value = res
+                    decodedStage.value = "Original QR code decoded on Stage 8 (BoofCV Inverted B/W)"
+                    return@withContext
+                }
+            } catch (e: Exception) {}
+
+            // COMPLETE FAILURE
+            qrCodeData.value = null
+            decodedStage.value = null
+            statusMessage.value = "Unable to decode. The QR code may be too damaged."
         }
     }
 
-    private fun addWhiteMarginToUri(uri: Uri): Bitmap? {
-        return try {
-            // Read the original cropped image from the shared URI
-            val inputStream = contentResolver.openInputStream(uri)
-            val originalBitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
-            inputStream?.close()
+    private fun padBitmapWithWhite(originalBitmap: Bitmap): Bitmap {
+        // Calculate a 20% margin based on the image's original size
+        val paddingX = (originalBitmap.width * 0.20).toInt()
+        val paddingY = (originalBitmap.height * 0.20).toInt()
+        val newWidth = originalBitmap.width + (paddingX * 2)
+        val newHeight = originalBitmap.height + (paddingY * 2)
 
-            if (originalBitmap == null) return null
+        val paddedBitmap = Bitmap.createBitmap(newWidth, newHeight, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(paddedBitmap)
 
-            // Calculate a 20% margin based on the image's original size
-            val paddingX = (originalBitmap.width * 0.20).toInt()
-            val paddingY = (originalBitmap.height * 0.20).toInt()
+        // Fill background with white, then draw the image in the center
+        canvas.drawColor(android.graphics.Color.WHITE)
+        canvas.drawBitmap(originalBitmap, paddingX.toFloat(), paddingY.toFloat(), null)
 
-            val newWidth = originalBitmap.width + (paddingX * 2)
-            val newHeight = originalBitmap.height + (paddingY * 2)
+        return paddedBitmap
+    }
 
-            // Create a new blank image
-            val paddedBitmap = Bitmap.createBitmap(newWidth, newHeight, Bitmap.Config.ARGB_8888)
-            val canvas = android.graphics.Canvas(paddedBitmap)
+    private fun invertBitmapColors(bitmap: Bitmap): Bitmap {
+        val inverted = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(inverted)
+        val paint = android.graphics.Paint()
 
-            // Fill the background entirely with pure white
-            canvas.drawColor(android.graphics.Color.WHITE)
+        // Mathematical matrix to invert RGB values but leave Alpha (opacity) alone
+        val colorMatrix = android.graphics.ColorMatrix(floatArrayOf(
+            -1f,  0f,  0f,  0f, 255f, // Red
+            0f, -1f,  0f,  0f, 255f, // Green
+            0f,  0f, -1f,  0f, 255f, // Blue
+            0f,  0f,  0f,  1f,   0f  // Alpha
+        ))
+        paint.colorFilter = android.graphics.ColorMatrixColorFilter(colorMatrix)
+        canvas.drawBitmap(bitmap, 0f, 0f, paint)
 
-            // Draw the original tightly-cropped QR code directly in the center
-            canvas.drawBitmap(originalBitmap, paddingX.toFloat(), paddingY.toFloat(), null)
+        return inverted
+    }
 
-            paddedBitmap
-        } catch (e: Exception) {
-            null
-        }
+    private fun applyExtremeContrast(bitmap: Bitmap): Bitmap {
+        val bwBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bwBitmap)
+        val paint = android.graphics.Paint()
+
+        val colorMatrix = android.graphics.ColorMatrix()
+        // 1. Convert to grayscale
+        colorMatrix.setSaturation(0f)
+
+        // 2. Apply extreme contrast multiplier (pushes grays to hard black/white)
+        val contrast = 10f
+        val translate = -255f * (contrast - 1f) / 2f
+        val contrastMatrix = android.graphics.ColorMatrix(floatArrayOf(
+            contrast, 0f, 0f, 0f, translate,
+            0f, contrast, 0f, 0f, translate,
+            0f, 0f, contrast, 0f, translate,
+            0f, 0f, 0f, 1f, 0f
+        ))
+        colorMatrix.postConcat(contrastMatrix)
+
+        paint.colorFilter = android.graphics.ColorMatrixColorFilter(colorMatrix)
+        canvas.drawBitmap(bitmap, 0f, 0f, paint)
+
+        return bwBitmap
     }
 
     private fun generateCleanQrCode(text: String): Bitmap? {
