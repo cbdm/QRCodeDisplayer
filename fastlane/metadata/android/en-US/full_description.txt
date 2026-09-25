@@ -1,0 +1,11 @@
+QR Code Displayer generates a clean, easy-to-scan version of any QR code.
+
+The app works like this:
+* You open an image containing a QR code on your phone and "share" it to this app.
+* The app decodes the original code using math!
+* A brand new, high-resolution QR code is generated containing the exact same content.
+* The new code is drawn with black edges on a white background.
+* Screen brightness is maximized to assist with scanning.
+* Optionally, you can give your new QR code a title and save it to use later.
+
+This app is fully open-source, contains no ads or unnecessary permissions, and processes all data entirely offline on your own device.
