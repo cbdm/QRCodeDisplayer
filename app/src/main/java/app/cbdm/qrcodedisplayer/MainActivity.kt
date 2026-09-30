@@ -17,13 +17,17 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,8 +44,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -67,8 +78,11 @@ class MainActivity : ComponentActivity() {
 
     // Global state to trigger UI recomposition
     private val qrCodeData = mutableStateOf<String?>(null)
-    private val statusMessage = mutableStateOf("Share an image with a QR code to this app.")
-    private val decodedStage = mutableStateOf<String?>(null)
+    private val defaultStatusMessage = "Click the button below to choose an image;\nyou can also share an image to this app."
+    private val statusMessageForFailure = "Unable to find or decode a QR code from your image :("
+    private val statusMessage = mutableStateOf(defaultStatusMessage)
+    private val debugMessage = mutableStateOf<String?>(null)
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -132,23 +146,73 @@ class MainActivity : ComponentActivity() {
 
                             Spacer(modifier = Modifier.height(32.dp))
 
-                            // 3. Update the button to apply the title and save
-                            Button(onClick = {
-                                val finalBitmap = addTitleToBitmap(bitmap, titleText)
-                                saveBitmapToGallery(finalBitmap, titleText)
-                            }) {
-                                Text("Save QR Code")
+                            // 3. Row with the possible actions (save or restart)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                Button(onClick = {
+                                    val finalBitmap = addTitleToBitmap(bitmap, titleText)
+                                    saveBitmapToGallery(finalBitmap, titleText)
+                                }) {
+                                    Text("Save QR Code")
+                                }
+
+                                OutlinedButton(onClick = {
+                                    // Resetting the data state automatically kicks the UI back to the 'else' block
+                                    qrCodeData.value = null
+                                    debugMessage.value = null
+                                    statusMessage.value = defaultStatusMessage
+                                }) {
+                                    Text("Start Over")
+                                }
                             }
                         }
                     } else {
                         StatusText("Failed to encode QR.")
                     }
-                } else {
-                    StatusText(statusMessage.value)
+                } else if (statusMessage.value == statusMessageForFailure) { // Could not decode the image the user picked.
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        StatusText(statusMessage.value)
+                        OutlinedButton(onClick = {
+                            qrCodeData.value = null
+                            debugMessage.value = null
+                            statusMessage.value = defaultStatusMessage
+                        }) {
+                            Text("Start Over")
+                        }
+                    }
+                } else { // The user has not shared an image to the app and has not selected an image yet.
+                    val coroutineScope = rememberCoroutineScope()
+                    val pickMedia = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.PickVisualMedia()
+                    ) { uri ->
+                        if (uri != null) {
+                            coroutineScope.launch {
+                                decodeImageWithFallback(uri)
+                            }
+                        } else {
+                            debugMessage.value = "User did not pick an image"
+                        }
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        StatusText(statusMessage.value)
+
+                        Button(
+                            onClick = {
+                                pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }
+                        ) {
+                            Text("Select Image")
+                        }
+                    }
                 }
 
-                val stage = decodedStage.value
-                if (stage != null) {
+                // Show debug info only if there is something to show.
+                val info = debugMessage.value
+                if (info != null) {
                     // 1. State to track if the bug is open or closed
                     var isDebugExpanded by remember { mutableStateOf(false) }
 
@@ -183,7 +247,7 @@ class MainActivity : ComponentActivity() {
                             if (isDebugExpanded) {
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = stage,
+                                    text = info,
                                     color = Color.DarkGray,
                                     fontSize = 11.sp
                                 )
@@ -251,7 +315,7 @@ class MainActivity : ComponentActivity() {
                 val res = zxingReader.read(normalImg).firstOrNull()
                 if (res != null && !res.text.isNullOrEmpty()) {
                     qrCodeData.value = res.text
-                    decodedStage.value = "Original QR code decoded on Stage 1 (ZXing Normal)"
+                    debugMessage.value = "Original QR code decoded on Stage 1 (ZXing Normal)"
                     return@withContext
                 }
             } catch (e: Exception) {}
@@ -261,7 +325,7 @@ class MainActivity : ComponentActivity() {
                 val res = zxingReader.read(invertedImg).firstOrNull()
                 if (res != null && !res.text.isNullOrEmpty()) {
                     qrCodeData.value = res.text
-                    decodedStage.value = "Original QR code decoded on Stage 2 (ZXing Inverted)"
+                    debugMessage.value = "Original QR code decoded on Stage 2 (ZXing Inverted)"
                     return@withContext
                 }
             } catch (e: Exception) {}
@@ -271,7 +335,7 @@ class MainActivity : ComponentActivity() {
                 val res = zxingReader.read(bwImg).firstOrNull()
                 if (res != null && !res.text.isNullOrEmpty()) {
                     qrCodeData.value = res.text
-                    decodedStage.value = "Original QR code decoded on Stage 3 (ZXing B/W)"
+                    debugMessage.value = "Original QR code decoded on Stage 3 (ZXing B/W)"
                     return@withContext
                 }
             } catch (e: Exception) {}
@@ -281,7 +345,7 @@ class MainActivity : ComponentActivity() {
                 val res = zxingReader.read(bwInvertedImg).firstOrNull()
                 if (res != null && !res.text.isNullOrEmpty()) {
                     qrCodeData.value = res.text
-                    decodedStage.value = "Original QR code decoded on Stage 4 (ZXing Inverted B/W)"
+                    debugMessage.value = "Original QR code decoded on Stage 4 (ZXing Inverted B/W)"
                     return@withContext
                 }
             } catch (e: Exception) {}
@@ -311,7 +375,7 @@ class MainActivity : ComponentActivity() {
                 val res = tryBoofCV(normalImg)
                 if (!res.isNullOrEmpty()) {
                     qrCodeData.value = res
-                    decodedStage.value = "Original QR code decoded on Stage 5 (BoofCV Normal)"
+                    debugMessage.value = "Original QR code decoded on Stage 5 (BoofCV Normal)"
                     return@withContext
                 }
             } catch (e: Exception) {}
@@ -322,7 +386,7 @@ class MainActivity : ComponentActivity() {
                 val res = tryBoofCV(invertedImg)
                 if (!res.isNullOrEmpty()) {
                     qrCodeData.value = res
-                    decodedStage.value = "Original QR code decoded on Stage 6 (BoofCV Inverted)"
+                    debugMessage.value = "Original QR code decoded on Stage 6 (BoofCV Inverted)"
                     return@withContext
                 }
             } catch (e: Exception) {}
@@ -333,7 +397,7 @@ class MainActivity : ComponentActivity() {
                 val res = tryBoofCV(bwImg)
                 if (!res.isNullOrEmpty()) {
                     qrCodeData.value = res
-                    decodedStage.value = "Original QR code decoded on Stage 7 (BoofCV B/W)"
+                    debugMessage.value = "Original QR code decoded on Stage 7 (BoofCV B/W)"
                     return@withContext
                 }
             } catch (e: Exception) {}
@@ -343,15 +407,15 @@ class MainActivity : ComponentActivity() {
                 val res = tryBoofCV(bwInvertedImg)
                 if (!res.isNullOrEmpty()) {
                     qrCodeData.value = res
-                    decodedStage.value = "Original QR code decoded on Stage 8 (BoofCV Inverted B/W)"
+                    debugMessage.value = "Original QR code decoded on Stage 8 (BoofCV Inverted B/W)"
                     return@withContext
                 }
             } catch (e: Exception) {}
 
             // COMPLETE FAILURE
             qrCodeData.value = null
-            decodedStage.value = null
-            statusMessage.value = "Unable to decode. The QR code may be too damaged."
+            debugMessage.value = "All decode stages failed..."
+            statusMessage.value = statusMessageForFailure
         }
     }
 
