@@ -2,8 +2,8 @@
  * QR Code Displayer
  * Created by Caio (cbdm.app)
  *
- * Recreates cropped or poor quality QR codes using ML Kit and
- * generates a high-resolution version on a white background.
+ * Decodes cropped or poor quality QR codes using zxing-cpp and boofcv;
+ * then generates a high-resolution version on a white background.
  */
 
 package app.cbdm.qrcodedisplayer
