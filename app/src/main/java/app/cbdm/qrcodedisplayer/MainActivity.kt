@@ -8,7 +8,10 @@
 
 package app.cbdm.qrcodedisplayer
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
@@ -47,11 +50,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,6 +70,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -99,7 +105,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             // Keep track if the user entered display mode
             var isDisplayMode by remember { mutableStateOf(false) }
-            
+
             // Control brightness and display dimming if display mode is on.
             LaunchedEffect(isDisplayMode) {
                 if (isDisplayMode) {
@@ -116,6 +122,9 @@ class MainActivity : ComponentActivity() {
                     window.attributes = attrs
                 }
             }
+
+            // Keep track if the user opened the info dialog
+            var showInfoDialog by remember { mutableStateOf(false) }
 
             // Pure white background taking up the full screen
             Box(
@@ -194,6 +203,10 @@ class MainActivity : ComponentActivity() {
                                         Text("Save QR Code")
                                     }
 
+                                    OutlinedButton(onClick = { showInfoDialog = true }) {
+                                        Text("See Content")
+                                    }
+
                                     OutlinedButton(onClick = {
                                         // Resetting the data state automatically kicks the UI back to the 'else' block
                                         qrCodeData.value = null
@@ -247,7 +260,7 @@ class MainActivity : ComponentActivity() {
 
                 // Show debug info only if there is something to show.
                 val info = debugMessage.value
-                if (!isDisplayMode  && info != null) {
+                if (!isDisplayMode && info != null) {
                     // 1. State to track if the bug is open or closed
                     var isDebugExpanded by remember { mutableStateOf(false) }
 
@@ -361,6 +374,50 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
+                }
+
+                // Popup panel to show decoded qr code information
+                if (!isDisplayMode && showInfoDialog) {
+                    val context = LocalContext.current
+                    AlertDialog(
+                        onDismissRequest = { showInfoDialog = false },
+                        title = {
+                            Text("QR Code Content")
+                        },
+                        text = {
+                            Text(text = qrCodeData.value ?: "No data available.")
+                        },
+                        confirmButton = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                // Close button on the left
+                                TextButton(
+                                    onClick = { showInfoDialog = false }
+                                ) {
+                                    Text("Close")
+                                }
+
+                                // Copy Button on the right
+                                Button(
+                                    onClick = {
+                                        qrCodeData.value?.let { decodedText ->
+                                            // Add the qr code content into the user's clipboard
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            val clip = ClipData.newPlainText("QR Code Content", decodedText)
+                                            clipboard.setPrimaryClip(clip)
+                                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                        }
+                                        // Dismiss this pane if the user copied the contents already
+                                        showInfoDialog = false
+                                    }
+                                ) {
+                                    Text("Copy Content")
+                                }
+                            }
+                        }
+                    )
                 }
             }
         }
