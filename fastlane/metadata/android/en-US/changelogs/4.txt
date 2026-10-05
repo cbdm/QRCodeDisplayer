@@ -1,0 +1,2 @@
+- Added display mode to keep the screen awake for scanning
+- Added option to see and copy the contents of the QR code
