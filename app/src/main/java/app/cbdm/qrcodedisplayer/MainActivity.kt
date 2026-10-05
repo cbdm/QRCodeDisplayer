@@ -15,6 +15,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -22,11 +23,15 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +48,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -58,6 +64,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -83,7 +90,6 @@ class MainActivity : ComponentActivity() {
     private val statusMessage = mutableStateOf(defaultStatusMessage)
     private val debugMessage = mutableStateOf<String?>(null)
 
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -91,9 +97,24 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
 
         setContent {
-            // Turn on full brightness
-            LaunchedEffect(Unit) {
-                window.attributes = window.attributes.apply { screenBrightness = 1.0f }
+            // Keep track if the user entered display mode
+            var isDisplayMode by remember { mutableStateOf(false) }
+            
+            // Control brightness and display dimming if display mode is on.
+            LaunchedEffect(isDisplayMode) {
+                if (isDisplayMode) {
+                    // Keep screen awake and force max brightness when displaying the code
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    val attrs = window.attributes
+                    attrs.screenBrightness = 1.0f
+                    window.attributes = attrs
+                } else {
+                    // Revert to user settings when display mode is off
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    val attrs = window.attributes
+                    attrs.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                    window.attributes = attrs
+                }
             }
 
             // Pure white background taking up the full screen
@@ -108,36 +129,39 @@ class MainActivity : ComponentActivity() {
                     // Generate and cache the Bitmap so it doesn't redraw constantly
                     val bitmap = remember(data) { generateCleanQrCode(data) }
                     if (bitmap != null) {
-                        // 1. Add state variable for the title
+                        // Add state variable for the title
                         var titleText by remember { mutableStateOf("") }
 
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
 
-                            // 2. Add the invisible text field above the image
-                            BasicTextField(
-                                value = titleText,
-                                onValueChange = { titleText = it },
-                                textStyle = TextStyle(
-                                    color = Color.Black,
-                                    fontSize = 24.sp,
-                                    textAlign = TextAlign.Center
-                                ),
-                                decorationBox = { innerTextField ->
-                                    if (titleText.isEmpty()) {
-                                        Text(
-                                            text = "Click here to add a title",
-                                            color = Color.LightGray,
-                                            fontSize = 24.sp,
-                                            textAlign = TextAlign.Center
-                                        )
-                                    }
-                                    innerTextField()
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp)
-                            )
+                            // Add the invisible text field above the image if not on display mode
+                            if (!isDisplayMode) {
+                                BasicTextField(
+                                    value = titleText,
+                                    onValueChange = { titleText = it },
+                                    textStyle = TextStyle(
+                                        color = Color.Black,
+                                        fontSize = 24.sp,
+                                        textAlign = TextAlign.Center
+                                    ),
+                                    decorationBox = { innerTextField ->
+                                        if (titleText.isEmpty()) {
+                                            Text(
+                                                text = "Click here to add a title",
+                                                color = Color.LightGray,
+                                                fontSize = 24.sp,
+                                                textAlign = TextAlign.Center
+                                            )
+                                        }
+                                        innerTextField()
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp)
+                                )
+                            }
 
+                            // Draw the QR code in the center.
                             Image(
                                 bitmap = bitmap.asImageBitmap(),
                                 contentDescription = "Cleaned QR Code",
@@ -146,27 +170,38 @@ class MainActivity : ComponentActivity() {
 
                             Spacer(modifier = Modifier.height(32.dp))
 
-                            // 3. Row with the possible actions (save or restart)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.SpaceEvenly
-                            ) {
-                                Button(onClick = {
-                                    val finalBitmap = addTitleToBitmap(bitmap, titleText)
-                                    saveBitmapToGallery(finalBitmap, titleText)
-                                }) {
-                                    Text("Save QR Code")
+                            // Show possible actions when not on display mode
+                            if (!isDisplayMode) {
+                                Button(
+                                    onClick = { isDisplayMode = true },
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp)
+                                ) {
+                                    Text("Enter Display Mode")
                                 }
 
-                                OutlinedButton(onClick = {
-                                    // Resetting the data state automatically kicks the UI back to the 'else' block
-                                    qrCodeData.value = null
-                                    debugMessage.value = null
-                                    statusMessage.value = defaultStatusMessage
-                                }) {
-                                    Text("Start Over")
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.SpaceEvenly
+                                ) {
+                                    OutlinedButton(onClick = {
+                                        val finalBitmap = addTitleToBitmap(bitmap, titleText)
+                                        saveBitmapToGallery(finalBitmap, titleText)
+                                    }) {
+                                        Text("Save QR Code")
+                                    }
+
+                                    OutlinedButton(onClick = {
+                                        // Resetting the data state automatically kicks the UI back to the 'else' block
+                                        qrCodeData.value = null
+                                        debugMessage.value = null
+                                        statusMessage.value = defaultStatusMessage
+                                    }) {
+                                        Text("Restart")
+                                    }
                                 }
                             }
                         }
@@ -212,7 +247,7 @@ class MainActivity : ComponentActivity() {
 
                 // Show debug info only if there is something to show.
                 val info = debugMessage.value
-                if (info != null) {
+                if (!isDisplayMode  && info != null) {
                     // 1. State to track if the bug is open or closed
                     var isDebugExpanded by remember { mutableStateOf(false) }
 
@@ -252,6 +287,78 @@ class MainActivity : ComponentActivity() {
                                     fontSize = 11.sp
                                 )
                             }
+                        }
+                    }
+                }
+
+                // Logic to turn off display mode when the user holds for 2s
+                if (isDisplayMode) {
+                    val coroutineScope = rememberCoroutineScope()
+                    val holdProgress = remember { Animatable(0f) }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            // Capture all touches on the screen
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onPress = {
+                                        // Start filling the circle over 2 seconds
+                                        val animationJob = coroutineScope.launch {
+                                            holdProgress.animateTo(
+                                                targetValue = 1f,
+                                                animationSpec = tween(durationMillis = 2000, easing = LinearEasing)
+                                            )
+                                            // If it successfully hits 100% without being canceled, exit!
+                                            if (holdProgress.value == 1f) {
+                                                isDisplayMode = false
+                                            }
+                                        }
+
+                                        // Wait for the user to lift their finger
+                                        try {
+                                            awaitRelease()
+                                        } finally {
+                                            // If they let go early, cancel the timer and instantly snap the circle back to 0
+                                            animationJob.cancel()
+                                            coroutineScope.launch { holdProgress.snapTo(0f) }
+                                        }
+                                    }
+                                )
+                            },
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        // Only draw the visual feedback box if they are actively holding the screen
+                        if (holdProgress.value > 0f) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(bottom = 96.dp)
+                                    .size(120.dp)
+                                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(16.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    progress = { holdProgress.value },
+                                    modifier = Modifier.size(64.dp),
+                                    color = Color.White,
+                                    strokeWidth = 6.dp,
+                                    trackColor = Color.DarkGray
+                                )
+                            }
+                        } else {
+                            // Otherwise show instructions on how to exit this mode
+                            Text(
+                                text = "Tap and hold anywhere to exit display mode",
+                                color = Color.DarkGray,
+                                fontSize = 14.sp,
+                                modifier = Modifier
+                                    .padding(bottom = 96.dp)
+                                    .background(
+                                        color = Color.LightGray.copy(alpha = 0.5f),
+                                        shape = RoundedCornerShape(16.dp)
+                                    )
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
                         }
                     }
                 }
