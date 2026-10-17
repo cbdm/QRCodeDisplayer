@@ -59,6 +59,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -111,6 +112,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             // Keep track if the user entered display mode
             var isDisplayMode by remember { mutableStateOf(false) }
+            // Hold the user input if they want to create a new code
+            var manualInputText by remember { mutableStateOf("") }
 
             // Control brightness and display dimming if display mode is on.
             LaunchedEffect(isDisplayMode) {
@@ -254,12 +257,44 @@ class MainActivity : ComponentActivity() {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         StatusText(statusMessage.value)
 
+                        // Image picker button
                         Button(
                             onClick = {
                                 pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                             }
                         ) {
                             Text("Select Image")
+                        }
+
+                        // Give option for user to enter a manual value for the code
+                        Spacer(modifier = Modifier.height(32.dp))
+                        Text("— OR —", color = Color.Gray)
+                        Spacer(modifier = Modifier.height(32.dp))
+
+                        // The new manual text field
+                        OutlinedTextField(
+                            value = manualInputText,
+                            onValueChange = { manualInputText = it },
+                            label = { Text("Paste Text or URL") },
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // The Generate Button
+                        Button(
+                            onClick = {
+                                if (manualInputText.isNotBlank()) {
+                                    // Update the decoded qr code value; since this is a state var,
+                                    // setContent will be re-called and the code will be drawn.
+                                    qrCodeData.value = manualInputText
+                                    // Clear user input so they can restart from blank later
+                                    manualInputText = ""
+                                }
+                            },
+                            // Disable button if text is empty
+                            enabled = manualInputText.isNotBlank()
+                        ) {
+                            Text("Generate QR Code")
                         }
                     }
                 }

@@ -1,0 +1,2 @@
+- Added option to create code based on user input
+- Fixed bug that cut off long titles when saving the code
