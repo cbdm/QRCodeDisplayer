@@ -14,10 +14,14 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Paint
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -75,6 +79,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.withTranslation
 import androidx.lifecycle.lifecycleScope
 import boofcv.android.ConvertBitmap
 import boofcv.factory.fiducial.ConfigQrCode
@@ -664,37 +670,42 @@ class MainActivity : ComponentActivity() {
     private fun addTitleToBitmap(qrBitmap: Bitmap, title: String): Bitmap {
         if (title.isBlank()) return qrBitmap
 
-        val paint = android.graphics.Paint().apply {
+        // Set up the TextPaint to have StaticLayout available
+        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = android.graphics.Color.BLACK
-            textSize = 80f // Large text to match the 1024x1024 QR code
-            textAlign = android.graphics.Paint.Align.CENTER
-            isAntiAlias = true
+            textSize = 48f
+            textAlign = Paint.Align.LEFT
         }
 
-        // Calculate layout spacing
-        val textPadding = 60
-        val textHeight = paint.descent() - paint.ascent()
-        val extraHeight = (textHeight + textPadding * 2).toInt()
+        val padding = 40 // Padding around edges
+        val textWidth = qrBitmap.width - (padding * 2)
 
-        // Create a taller bitmap to fit the text
-        val newBitmap = Bitmap.createBitmap(
-            qrBitmap.width,
-            qrBitmap.height + extraHeight,
-            Bitmap.Config.ARGB_8888
-        )
+        // Create a StaticLayout to automatically wrap the text if line is too long
+        val staticLayout = StaticLayout.Builder
+            .obtain(title, 0, title.length, textPaint, textWidth)
+            .setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .build()
 
-        val canvas = android.graphics.Canvas(newBitmap)
+        // Calculate dynamic height (QR height + wrapped text height + paddings)
+        val newWidth = qrBitmap.width
+        val textHeight = staticLayout.height
+        val newHeight = qrBitmap.height + textHeight + (padding * 3)
+
+        // Create the new blank canvas
+        val combinedBitmap = createBitmap(newWidth, newHeight, qrBitmap.config ?: Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(combinedBitmap)
         canvas.drawColor(android.graphics.Color.WHITE)
 
-        // Draw the text centered at the top
-        val xPos = canvas.width / 2f
-        val yPos = textPadding - paint.ascent()
-        canvas.drawText(title, xPos, yPos, paint)
+        // Draw the multi-line text
+        canvas.withTranslation(x = padding.toFloat(), y = padding.toFloat()) {
+            staticLayout.draw(this) // 'this' refers to the canvas inside the block
+        }
 
         // Draw the QR code directly below the text
-        canvas.drawBitmap(qrBitmap, 0f, extraHeight.toFloat(), null)
+        val qrTopY = (padding * 2) + textHeight
+        canvas.drawBitmap(qrBitmap, 0f, qrTopY.toFloat(), null)
 
-        return newBitmap
+        return combinedBitmap
     }
 
     private fun saveBitmapToGallery(bitmap: Bitmap, title: String) {
