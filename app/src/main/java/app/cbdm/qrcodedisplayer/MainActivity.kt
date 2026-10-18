@@ -8,6 +8,7 @@
 
 package app.cbdm.qrcodedisplayer
 
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ContentValues
@@ -39,6 +40,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -78,12 +80,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.withTranslation
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import boofcv.android.ConvertBitmap
 import boofcv.factory.fiducial.ConfigQrCode
@@ -119,20 +125,33 @@ class MainActivity : ComponentActivity() {
             // Hold the user input if they want to create a new code
             var manualInputText by remember { mutableStateOf("") }
 
+            val view = LocalView.current
+            val isDarkTheme = isSystemInDarkTheme()
             // Control brightness and display dimming if display mode is on.
             LaunchedEffect(isDisplayMode) {
+                val window = (view.context as Activity).window
+                val insetsController = WindowCompat.getInsetsController(window, view)
+
                 if (isDisplayMode) {
                     // Keep screen awake and force max brightness when displaying the code
                     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     val attrs = window.attributes
                     attrs.screenBrightness = 1.0f
                     window.attributes = attrs
+                    // Hide the status bar completely during Display Mode
+                    insetsController.hide(WindowInsetsCompat.Type.statusBars())
+                    // Allow the user to swipe down from the top to temporarily see the time/battery
+                    insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 } else {
                     // Revert to user settings when display mode is off
                     window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     val attrs = window.attributes
                     attrs.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
                     window.attributes = attrs
+                    // Show the status bar on normal screens
+                    insetsController.show(WindowInsetsCompat.Type.statusBars())
+                    // Make icons white in dark mode, black in light mode
+                    insetsController.isAppearanceLightStatusBars = !isDarkTheme
                 }
             }
 

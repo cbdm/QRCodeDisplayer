@@ -1,0 +1,2 @@
+- Made long screens scrollable so all actions are reachable.
+- Made status bar information visible from within the app.
