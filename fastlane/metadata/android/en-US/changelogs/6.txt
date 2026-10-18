@@ -1,0 +1,2 @@
+- Added debug info for user-generated codes
+- Added a limit to how long the user input can be

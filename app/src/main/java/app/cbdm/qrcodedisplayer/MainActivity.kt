@@ -272,10 +272,24 @@ class MainActivity : ComponentActivity() {
                         Spacer(modifier = Modifier.height(32.dp))
 
                         // The new manual text field
+                        val maxInputLimit = 500
                         OutlinedTextField(
                             value = manualInputText,
-                            onValueChange = { manualInputText = it },
+                            onValueChange = { newText ->
+                                // Make sure the input has a reasonable length to fit in a qr code.
+                                if (newText.length <= maxInputLimit) {
+                                    manualInputText = newText
+                                }
+                            },
                             label = { Text("Paste Text or URL") },
+                            // Show the user how close they are to the limit
+                            supportingText = {
+                                Text(
+                                    text = "${manualInputText.length} / $maxInputLimit",
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textAlign = TextAlign.End
+                                )
+                            },
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
@@ -289,6 +303,8 @@ class MainActivity : ComponentActivity() {
                                     qrCodeData.value = manualInputText
                                     // Clear user input so they can restart from blank later
                                     manualInputText = ""
+                                    // Set debug message to say how this qr code was generated
+                                    debugMessage.value = "QR code created from user input"
                                 }
                             },
                             // Disable button if text is empty
