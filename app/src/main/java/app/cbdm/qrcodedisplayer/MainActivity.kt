@@ -50,8 +50,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material3.AlertDialog
@@ -152,7 +154,10 @@ class MainActivity : ComponentActivity() {
                         // Add state variable for the title
                         var titleText by remember { mutableStateOf("") }
 
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(
+                            modifier = Modifier.verticalScroll(rememberScrollState()),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
 
                             // Add the invisible text field above the image if not on display mode
                             if (!isDisplayMode) {
@@ -256,7 +261,10 @@ class MainActivity : ComponentActivity() {
                             debugMessage.value = "User did not pick an image"
                         }
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         StatusText(statusMessage.value)
 
                         // Image picker button
