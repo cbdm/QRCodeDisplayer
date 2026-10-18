@@ -98,10 +98,12 @@ class MainActivity : ComponentActivity() {
 
     // Global state to trigger UI recomposition
     private val qrCodeData = mutableStateOf<String?>(null)
-    private val defaultStatusMessage = "Click the button below to choose an image;\nyou can also share an image to this app."
+    private val defaultStatusMessage = "Click the button below to choose an image."
     private val statusMessageForFailure = "Unable to find or decode a QR code from your image :("
     private val statusMessage = mutableStateOf(defaultStatusMessage)
     private val debugMessage = mutableStateOf<String?>(null)
+    // Max length for user input
+    private val maxInputLimit = 500
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -272,13 +274,14 @@ class MainActivity : ComponentActivity() {
                         Spacer(modifier = Modifier.height(32.dp))
 
                         // The new manual text field
-                        val maxInputLimit = 500
                         OutlinedTextField(
                             value = manualInputText,
                             onValueChange = { newText ->
                                 // Make sure the input has a reasonable length to fit in a qr code.
                                 if (newText.length <= maxInputLimit) {
                                     manualInputText = newText
+                                } else {
+                                    debugMessage.value = "User input is too long (${newText.length} / $maxInputLimit)"
                                 }
                             },
                             label = { Text("Paste Text or URL") },
@@ -312,6 +315,12 @@ class MainActivity : ComponentActivity() {
                         ) {
                             Text("Generate QR Code")
                         }
+
+                        Spacer(modifier = Modifier.height(32.dp))
+                        Text("— OR —", color = Color.Gray)
+                        Spacer(modifier = Modifier.height(32.dp))
+
+                        Text("Share an image, text, or link directly to this app!")
                     }
                 }
 
@@ -487,17 +496,31 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent) {
-        if (intent.action == Intent.ACTION_SEND && intent.type?.startsWith("image/") == true) {
-            @Suppress("DEPRECATION")
-            val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
-            if (uri != null) {
-                statusMessage.value = "Analyzing..."
-                // Launch the heavy scanning process in the background
-                lifecycleScope.launch {
-                    decodeImageWithFallback(uri)
+        if (intent.action == Intent.ACTION_SEND) {
+            if (intent.type?.startsWith("image/") == true) { // Handle incoming images.
+                @Suppress("DEPRECATION")
+                val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                if (uri != null) {
+                    statusMessage.value = "Analyzing..."
+                    // Launch the heavy scanning process in the background
+                    lifecycleScope.launch {
+                        decodeImageWithFallback(uri)
+                    }
+                } else {
+                    debugMessage.value = "Error: No image attached."
                 }
-            } else {
-                statusMessage.value = "Error: No image attached."
+            } else if (intent.type == "text/plain") { // Handle incoming text/URLs.
+                val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+                if (!sharedText.isNullOrBlank()) {
+                    if (sharedText.length <= maxInputLimit) {
+                        // If user shared valid text, set that as the qr code data and set debug info.
+                        qrCodeData.value = sharedText
+                        debugMessage.value = "QR code created from shared text"
+                    } else {
+                        debugMessage.value =
+                            "Error: shared text is too long (${sharedText.length} / $maxInputLimit)"
+                    }
+                }
             }
         }
     }

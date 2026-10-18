@@ -1,0 +1,2 @@
+- Users can "share" a text or link to the app to generate a QR code.
+- Added informatio about new functions to home screen.
