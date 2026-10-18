@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -125,12 +126,16 @@ class MainActivity : ComponentActivity() {
             // Hold the user input if they want to create a new code
             var manualInputText by remember { mutableStateOf("") }
 
-            val view = LocalView.current
-            val isDarkTheme = isSystemInDarkTheme()
             // Control brightness and display dimming if display mode is on.
+            val view = LocalView.current
             LaunchedEffect(isDisplayMode) {
                 val window = (view.context as Activity).window
                 val insetsController = WindowCompat.getInsetsController(window, view)
+
+                // Set status bar background to always be white with black icons
+                @Suppress("DEPRECATION")
+                window.statusBarColor = android.graphics.Color.WHITE
+                insetsController.isAppearanceLightStatusBars = true
 
                 if (isDisplayMode) {
                     // Keep screen awake and force max brightness when displaying the code
@@ -150,8 +155,6 @@ class MainActivity : ComponentActivity() {
                     window.attributes = attrs
                     // Show the status bar on normal screens
                     insetsController.show(WindowInsetsCompat.Type.statusBars())
-                    // Make icons white in dark mode, black in light mode
-                    insetsController.isAppearanceLightStatusBars = !isDarkTheme
                 }
             }
 
@@ -174,7 +177,9 @@ class MainActivity : ComponentActivity() {
                         var titleText by remember { mutableStateOf("") }
 
                         Column(
-                            modifier = Modifier.verticalScroll(rememberScrollState()),
+                            modifier = Modifier
+                                .navigationBarsPadding()
+                                .verticalScroll(rememberScrollState()),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
 
@@ -281,7 +286,9 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     Column(
-                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        modifier = Modifier
+                            .navigationBarsPadding()
+                            .verticalScroll(rememberScrollState()),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         StatusText(statusMessage.value)
