@@ -102,6 +102,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import zxingcpp.BarcodeReader
+import androidx.core.content.FileProvider
+import java.io.File
+import java.io.FileOutputStream
 
 class MainActivity : ComponentActivity() {
 
@@ -125,6 +128,8 @@ class MainActivity : ComponentActivity() {
             var isDisplayMode by remember { mutableStateOf(false) }
             // Hold the user input if they want to create a new code
             var manualInputText by remember { mutableStateOf("") }
+            // Hold current context for sharing action
+            val context = LocalContext.current
 
             // Control brightness and display dimming if display mode is on.
             val view = LocalView.current
@@ -240,14 +245,32 @@ class MainActivity : ComponentActivity() {
                                         val finalBitmap = addTitleToBitmap(bitmap, titleText)
                                         saveBitmapToGallery(finalBitmap, titleText)
                                     }) {
-                                        Text("Save QR Code")
+                                        Text("Save Code")
                                     }
+
+                                    OutlinedButton(onClick = {
+                                        val finalBitmap = addTitleToBitmap(bitmap, titleText)
+                                        shareQrCodeBitmap(context, finalBitmap)
+                                    }) {
+                                        Text("Share Code")
+                                    }
+
 
                                     OutlinedButton(onClick = { showInfoDialog = true }) {
                                         Text("See Content")
                                     }
 
-                                    OutlinedButton(onClick = {
+                                }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(
+                                            horizontal = 16.dp,
+                                            vertical = 16.dp,
+                                        ),
+                                    horizontalArrangement = Arrangement.SpaceEvenly
+                                ) {
+                                    TextButton(onClick = {
                                         // Resetting the data state automatically kicks the UI back to the 'else' block
                                         qrCodeData.value = null
                                         debugMessage.value = null
@@ -904,6 +927,31 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             Toast.makeText(this, "Error saving: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun shareQrCodeBitmap(context: Context, bitmap: Bitmap) {
+        val cacheDir = File(context.cacheDir, "shared_qr_codes").apply { mkdirs() }
+        val file = File(cacheDir, "qr_code.png")
+
+        FileOutputStream(file).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        }
+
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            // Populates the Android 10+ Share Sheet thumbnail preview and propagates read grants
+            clipData = ClipData.newUri(context.contentResolver, "QR Code", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        context.startActivity(Intent.createChooser(shareIntent, "Share QR Code"))
     }
 
     @Composable
