@@ -13,8 +13,8 @@ android {
         applicationId = "app.cbdm.qrcodedisplayer"
         minSdk = 24
         targetSdk = 37
-        versionCode = 8
-        versionName = "1.4.1"
+        versionCode = 9
+        versionName = "1.4.2"
     }
 
     buildTypes {
