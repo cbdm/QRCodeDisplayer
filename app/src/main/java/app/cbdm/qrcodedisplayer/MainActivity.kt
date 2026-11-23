@@ -479,7 +479,7 @@ class MainActivity : ComponentActivity() {
                 // Popup panel to show decoded qr code information
                 if (!isDisplayMode && showInfoDialog) {
                     val context = LocalContext.current
-                    val currentData = qrCodeData.value ?: "-- No data available --"
+                    val currentData = qrCodeData.value ?: ""
                     var isEditing by remember { mutableStateOf(false) }
                     var editedText by remember(currentData) { mutableStateOf(currentData) }
 
@@ -493,7 +493,7 @@ class MainActivity : ComponentActivity() {
                         },
                         text = {
                             if (!isEditing) {
-                                Text(text = currentData)
+                                Text(text = currentData.ifEmpty { "No data in this QR Code..." })
                             } else {
                                 OutlinedTextField(
                                     value = editedText,
