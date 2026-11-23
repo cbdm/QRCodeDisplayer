@@ -479,13 +479,30 @@ class MainActivity : ComponentActivity() {
                 // Popup panel to show decoded qr code information
                 if (!isDisplayMode && showInfoDialog) {
                     val context = LocalContext.current
+                    val currentData = qrCodeData.value ?: "-- No data available --"
+                    var isEditing by remember { mutableStateOf(false) }
+                    var editedText by remember(currentData) { mutableStateOf(currentData) }
+
                     AlertDialog(
-                        onDismissRequest = { showInfoDialog = false },
+                        onDismissRequest = {
+                            showInfoDialog = false
+                            isEditing = false
+                        },
                         title = {
-                            Text("QR Code Content")
+                            Text(if (!isEditing) "QR Code Content" else "Editing QR Code Content")
                         },
                         text = {
-                            Text(text = qrCodeData.value ?: "No data available.")
+                            if (!isEditing) {
+                                Text(text = currentData)
+                            } else {
+                                OutlinedTextField(
+                                    value = editedText,
+                                    onValueChange = { editedText = it },
+                                    label = { Text("QR Content") },
+                                    maxLines = 6,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         },
                         confirmButton = {
                             Row(
@@ -493,27 +510,69 @@ class MainActivity : ComponentActivity() {
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 // Close button on the left
-                                TextButton(
-                                    onClick = { showInfoDialog = false }
-                                ) {
-                                    Text("Close")
+                                if (!isEditing) {
+                                    TextButton(
+                                        onClick = { showInfoDialog = false }
+                                    ) {
+                                        Text("Close")
+                                    }
+                                } else {
+                                    TextButton(
+                                        onClick = {
+                                            isEditing = false
+                                            editedText = currentData
+                                        }
+                                    ) {
+                                        Text("Cancel")
+                                    }
                                 }
 
-                                // Copy Button on the right
-                                Button(
-                                    onClick = {
-                                        qrCodeData.value?.let { decodedText ->
-                                            // Add the qr code content into the user's clipboard
-                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                            val clip = ClipData.newPlainText("QR Code Content", decodedText)
-                                            clipboard.setPrimaryClip(clip)
-                                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                // Action buttons to the right
+                                if (!isEditing) {
+                                    TextButton(
+                                        onClick = {
+                                            isEditing = true
+                                            editedText = currentData
                                         }
-                                        // Dismiss this pane if the user copied the contents already
-                                        showInfoDialog = false
+                                    ) {
+                                        Text("Edit")
                                     }
-                                ) {
-                                    Text("Copy Content")
+
+                                    Button(
+                                        onClick = {
+                                            currentData.let { decodedText ->
+                                                // Add the qr code content into the user's clipboard
+                                                val clipboard =
+                                                    context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                val clip = ClipData.newPlainText(
+                                                    "QR Code Content",
+                                                    decodedText
+                                                )
+                                                clipboard.setPrimaryClip(clip)
+                                                Toast.makeText(
+                                                    context,
+                                                    "Copied to clipboard",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                            // Dismiss this pane if the user copied the contents already
+                                            showInfoDialog = false
+                                        }
+                                    ) {
+                                        Text("Copy")
+                                    }
+                                } else {
+                                    Button(
+                                        onClick = {
+                                            isEditing = false
+                                            qrCodeData.value = editedText
+                                            debugMessage.value = "QR code edited by user"
+                                        },
+                                        // Prevent empty QR codes or redundant updates
+                                        enabled = editedText.isNotBlank() && editedText != currentData
+                                    ) {
+                                        Text("Save Changes")
+                                    }
                                 }
                             }
                         }
